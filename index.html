@@ -151,7 +151,7 @@
 <script type="module">
     import { initializeApp }
         from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
-    import { getDatabase, ref, onValue, set }
+    import { getDatabase, ref, onValue, get, set }
         from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js";
     import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut }
         from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
@@ -171,7 +171,6 @@
     const API   = 'https://schedule.ulbsibiu.ro/api/faculties/ing';
 
     // Intervalele de pauza fixe ULB (in minute de la miezul noptii)
-    // 08:00-09:30, pauza 09:30-09:40, 09:40-11:10, pauza 11:10-11:20 etc.
     const PAUZE = [
         { start: 570,  end: 580  }, // 09:30 - 09:40
         { start: 670,  end: 680  }, // 11:10 - 11:20
@@ -297,6 +296,34 @@
     }
 
     // ============================================================
+    // CITESTE VACANTA DIN FIREBASE (de la prima placuta)
+    // ============================================================
+    async function citesteVacantaDinFirebase() {
+        try {
+            const snap = await get(ref(db, 'Configurare'));
+            const data = snap.val();
+            if (!data) return { start: null, end: null };
+
+            const macuri = Object.keys(data).filter(k => !k.includes('_vac_'));
+            if (macuri.length === 0) return { start: null, end: null };
+
+            const primulMac = macuri[0];
+            const vs = data[primulMac + '_vac_start'];
+            const ve = data[primulMac + '_vac_end'];
+
+            if (vs && ve) {
+                const startDate = new Date(vs);
+                const endDate   = new Date(ve);
+                endDate.setHours(23, 59, 59);
+                return { start: startDate, end: endDate };
+            }
+        } catch(e) {
+            console.error('Eroare citire vacanta:', e);
+        }
+        return { start: null, end: null };
+    }
+
+    // ============================================================
     // SALI LIVE DIN API ULB
     // ============================================================
     window.incarcaSaliLive = async function() {
@@ -311,15 +338,36 @@
 
         try {
             // 1. Semestrul activ
-            const semResp = await fetch(PROXY + API + '/planning-time-units?type=semester&active_only=true');
-            const semData = await semResp.json();
+            const semResp  = await fetch(PROXY + API + '/planning-time-units?type=semester&active_only=true');
+            const semData  = await semResp.json();
             const semestru = semData.data[0];
             const semId    = semestru.id;
             const semStart = new Date(semestru.startDate);
 
-            // 2. Calcul saptamana para/impara
-            const now       = new Date();
-            const diffZile  = Math.floor((now - semStart) / 86400000);
+            // 2. Citim vacanta din Firebase
+            const vacanta = await citesteVacantaDinFirebase();
+
+            // 3. Calcul saptamana para/impara cu scaderea vacantei
+            const now      = new Date();
+            let   diffZile = Math.floor((now - semStart) / 86400000);
+
+            if (vacanta.start && vacanta.end) {
+                // Daca suntem in vacanta acum
+                if (now >= vacanta.start && now <= vacanta.end) {
+                    container.innerHTML = `<div class="alert alert-warning text-center fs-5">
+                        🏖️ Suntem în vacanță!<br>
+                        <small class="text-muted">${vacanta.start.toLocaleDateString('ro-RO')} → ${vacanta.end.toLocaleDateString('ro-RO')}</small>
+                    </div>`;
+                    status.textContent = 'Vacanță';
+                    return;
+                }
+                // Daca am trecut de vacanta, scadem zilele
+                if (now > vacanta.end) {
+                    const zileVacanta = Math.floor((vacanta.end - vacanta.start) / 86400000) + 1;
+                    diffZile -= zileVacanta;
+                }
+            }
+
             const saptamana = Math.floor(diffZile / 7);
             const isEven    = (saptamana % 2 === 1);
             const ziuaEng   = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'][now.getDay()];
@@ -331,7 +379,7 @@
 
             status.textContent = `Săpt. ${saptamana+1} (${isEven ? 'pară' : 'impară'}) | ${ziuaEng} ${oraText}${oraCurentaEPauza ? ' | ⏸ Pauză' : ''}`;
 
-            // 3. Lista sali
+            // 4. Lista sali
             const saliResp = await fetch(PROXY + API + '/rooms?per_page=500');
             const saliData = await saliResp.json();
             const sali     = saliData.data;
@@ -347,8 +395,8 @@
             for (const grup of grupuri) {
                 await Promise.all(grup.map(async (sala) => {
                     try {
-                        const orarResp = await fetch(PROXY + API + '/rooms/' + sala.id + '/schedule');
-                        const orarData = await orarResp.json();
+                        const orarResp  = await fetch(PROXY + API + '/rooms/' + sala.id + '/schedule');
+                        const orarData  = await orarResp.json();
                         const schedules = orarData.data?.schedules || [];
 
                         let statusSala  = 'liber';
@@ -356,7 +404,7 @@
                         let profSala    = '';
                         let grupaSala   = '';
                         let oreSala     = '';
-                        let areOrarAzi  = false; // are macar un curs programat azi
+                        let areOrarAzi  = false;
 
                         for (const sched of schedules) {
                             if (sched.day !== ziuaEng) continue;
@@ -381,8 +429,7 @@
                             }
                         }
 
-                        // Daca nu e ocupata dar e ora de pauza ULB
-                        // si sala are orar azi -> e in pauza
+                        // Pauza fixa ULB — doar daca sala are orar azi
                         if (statusSala === 'liber' && oraCurentaEPauza && areOrarAzi) {
                             statusSala  = 'pauza';
                             materieSala = 'Pauză';
@@ -447,8 +494,8 @@
         for (const sala of filtrate) {
             let badgeClass = 'bg-success';
             let badgeText  = 'Liberă';
-            if (sala.status === 'ocupat') { badgeClass = 'bg-danger';             badgeText = 'Ocupată'; }
-            if (sala.status === 'pauza')  { badgeClass = 'bg-warning text-dark';  badgeText = 'Pauză';   }
+            if (sala.status === 'ocupat') { badgeClass = 'bg-danger';            badgeText = 'Ocupată'; }
+            if (sala.status === 'pauza')  { badgeClass = 'bg-warning text-dark'; badgeText = 'Pauză';   }
 
             html += `
             <div class="col-md-4 col-sm-6">
