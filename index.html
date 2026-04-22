@@ -88,14 +88,12 @@
         <!-- TABS -->
         <ul class="nav nav-tabs mb-4">
             <li class="nav-item">
-                <a class="nav-link active" id="tab-dispozitive" href="#" onclick="schimbaTab('dispozitive'); return false;">
-                    📡 Dispozitive
-                </a>
+                <a class="nav-link active" id="tab-dispozitive" href="#"
+                   onclick="schimbaTab('dispozitive'); return false;">📡 Dispozitive</a>
             </li>
             <li class="nav-item">
-                <a class="nav-link" id="tab-live" href="#" onclick="schimbaTab('live'); return false;">
-                    🔴 Săli Live
-                </a>
+                <a class="nav-link" id="tab-live" href="#"
+                   onclick="schimbaTab('live'); return false;">🔴 Săli Live</a>
             </li>
         </ul>
 
@@ -108,7 +106,8 @@
                             <span>🏫 Săli (Firebase)</span>
                             <span id="lastUpdate" class="badge bg-secondary" style="font-size:10px;">—</span>
                         </div>
-                        <ul class="list-group list-group-flush" id="listaSaliPreview" style="max-height:600px; overflow-y:auto;">
+                        <ul class="list-group list-group-flush" id="listaSaliPreview"
+                            style="max-height:600px; overflow-y:auto;">
                             <li class="list-group-item text-muted text-center py-3">Se încarcă...</li>
                         </ul>
                     </div>
@@ -141,8 +140,7 @@
             </div>
             <div id="saliLiveContainer">
                 <div class="text-center mt-5">
-                    <div class="spinner-border text-primary" role="status"></div>
-                    <p class="mt-2 text-muted">Apasă Reîncarcă pentru a vedea sălile.</p>
+                    <p class="text-muted">Apasă Reîncarcă pentru a vedea sălile.</p>
                 </div>
             </div>
         </div>
@@ -169,9 +167,20 @@
     const db   = getDatabase(app);
     const auth = getAuth(app);
 
-    // Proxy CORS pentru API ULB
     const PROXY = 'https://corsproxy.io/?';
     const API   = 'https://schedule.ulbsibiu.ro/api/faculties/ing';
+
+    // Intervalele de pauza fixe ULB (in minute de la miezul noptii)
+    // 08:00-09:30, pauza 09:30-09:40, 09:40-11:10, pauza 11:10-11:20 etc.
+    const PAUZE = [
+        { start: 570,  end: 580  }, // 09:30 - 09:40
+        { start: 670,  end: 680  }, // 11:10 - 11:20
+        { start: 770,  end: 780  }, // 12:50 - 13:00
+        { start: 870,  end: 880  }, // 14:30 - 14:40
+        { start: 970,  end: 980  }, // 16:10 - 16:20
+        { start: 1070, end: 1080 }, // 17:50 - 18:00
+        { start: 1170, end: 1180 }, // 19:30 - 19:40
+    ];
 
     let toateSalile     = [];
     let lastDevicesData = null;
@@ -243,7 +252,8 @@
                     else if (ml.includes('inchis'))  badge = '<span class="badge bg-secondary">Închis</span>';
                     else if (ml.includes('pauza'))   badge = '<span class="badge bg-warning text-dark">Pauză</span>';
                     else if (ml.includes('vacanta')) badge = '<span class="badge bg-warning text-dark">Vacanță</span>';
-                    else if (ml.includes('eroare') || ml.includes('negasita')) badge = '<span class="badge bg-danger">Eroare</span>';
+                    else if (ml.includes('eroare') || ml.includes('negasita'))
+                        badge = '<span class="badge bg-danger">Eroare</span>';
                     else badge = '<span class="badge bg-danger">Ocupat</span>';
 
                     const li = document.createElement('li');
@@ -274,7 +284,20 @@
     }
 
     // ============================================================
-    // SALI LIVE DIN API ULB (cu CORS proxy)
+    // HELPER: verifica daca ora e in pauza fixa ULB
+    // ============================================================
+    function esteInPauza(oraMin) {
+        return PAUZE.some(p => oraMin >= p.start && oraMin < p.end);
+    }
+
+    function timeToMins(timeStr) {
+        if (!timeStr) return 0;
+        const parts = timeStr.split(':');
+        return parseInt(parts[0]) * 60 + parseInt(parts[1]);
+    }
+
+    // ============================================================
+    // SALI LIVE DIN API ULB
     // ============================================================
     window.incarcaSaliLive = async function() {
         const container = document.getElementById('saliLiveContainer');
@@ -295,15 +318,18 @@
             const semStart = new Date(semestru.startDate);
 
             // 2. Calcul saptamana para/impara
-            const now      = new Date();
-            const diffZile = Math.floor((now - semStart) / 86400000);
+            const now       = new Date();
+            const diffZile  = Math.floor((now - semStart) / 86400000);
             const saptamana = Math.floor(diffZile / 7);
-            const isEven   = (saptamana % 2 === 1);
-            const ziuaEng  = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'][now.getDay()];
-            const oraMin   = now.getHours() * 60 + now.getMinutes();
-            const oraText  = now.getHours() + ':' + String(now.getMinutes()).padStart(2,'0');
+            const isEven    = (saptamana % 2 === 1);
+            const ziuaEng   = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'][now.getDay()];
+            const oraMin    = now.getHours() * 60 + now.getMinutes();
+            const oraText   = now.getHours() + ':' + String(now.getMinutes()).padStart(2,'0');
 
-            status.textContent = `Săpt. ${saptamana+1} (${isEven ? 'pară' : 'impară'}) | ${ziuaEng} ${oraText}`;
+            // Verificam daca ora curenta e in pauza fixa
+            const oraCurentaEPauza = esteInPauza(oraMin);
+
+            status.textContent = `Săpt. ${saptamana+1} (${isEven ? 'pară' : 'impară'}) | ${ziuaEng} ${oraText}${oraCurentaEPauza ? ' | ⏸ Pauză' : ''}`;
 
             // 3. Lista sali
             const saliResp = await fetch(PROXY + API + '/rooms?per_page=500');
@@ -330,9 +356,7 @@
                         let profSala    = '';
                         let grupaSala   = '';
                         let oreSala     = '';
-
-                        let minutFinalAnterior = -1;
-                        let minutUrmatorCurs   = 9999;
+                        let areOrarAzi  = false; // are macar un curs programat azi
 
                         for (const sched of schedules) {
                             if (sched.day !== ziuaEng) continue;
@@ -343,6 +367,7 @@
                             const slots = sched.timeSlots || [];
                             if (slots.length === 0) continue;
 
+                            areOrarAzi = true;
                             const startMin = timeToMins(slots[0].startTime);
                             const endMin   = timeToMins(slots[0].endTime);
 
@@ -354,20 +379,11 @@
                                 oreSala     = slots[0].startTime + '-' + slots[0].endTime;
                                 break;
                             }
-
-                            if (startMin > oraMin && startMin < minutUrmatorCurs)
-                                minutUrmatorCurs = startMin;
-                            if (endMin <= oraMin && endMin > minutFinalAnterior)
-                                minutFinalAnterior = endMin;
                         }
 
-                        // Detectare pauza (max 15 min intre cursuri)
-                        if (statusSala === 'liber' &&
-                            minutFinalAnterior !== -1 &&
-                            minutUrmatorCurs   !== 9999 &&
-                            (minutUrmatorCurs - minutFinalAnterior) <= 15 &&
-                            oraMin >= minutFinalAnterior &&
-                            oraMin <  minutUrmatorCurs) {
+                        // Daca nu e ocupata dar e ora de pauza ULB
+                        // si sala are orar azi -> e in pauza
+                        if (statusSala === 'liber' && oraCurentaEPauza && areOrarAzi) {
                             statusSala  = 'pauza';
                             materieSala = 'Pauză';
                         }
@@ -397,7 +413,8 @@
             });
 
             const nrOcupate = saliLiveData.filter(s => s.status === 'ocupat').length;
-            status.textContent = `Actualizat ${new Date().toLocaleTimeString('ro-RO')} | ${nrOcupate} ocupate din ${saliLiveData.length}`;
+            const nrPauza   = saliLiveData.filter(s => s.status === 'pauza').length;
+            status.textContent = `Actualizat ${new Date().toLocaleTimeString('ro-RO')} | ${nrOcupate} ocupate, ${nrPauza} în pauză`;
             randeazaSaliLive();
 
         } catch(e) {
@@ -407,12 +424,6 @@
             status.textContent = 'Eroare!';
         }
     };
-
-    function timeToMins(timeStr) {
-        if (!timeStr) return 0;
-        const parts = timeStr.split(':');
-        return parseInt(parts[0]) * 60 + parseInt(parts[1]);
-    }
 
     window.filtreaza = function(tip) {
         filtruCurent = tip;
@@ -436,7 +447,7 @@
         for (const sala of filtrate) {
             let badgeClass = 'bg-success';
             let badgeText  = 'Liberă';
-            if (sala.status === 'ocupat') { badgeClass = 'bg-danger';              badgeText = 'Ocupată'; }
+            if (sala.status === 'ocupat') { badgeClass = 'bg-danger';             badgeText = 'Ocupată'; }
             if (sala.status === 'pauza')  { badgeClass = 'bg-warning text-dark';  badgeText = 'Pauză';   }
 
             html += `
@@ -450,7 +461,9 @@
                         <div class="sala-info">
                             <div>📚 ${sala.materie}</div>
                             <div>👤 ${sala.prof}</div>
-                            <div>👥 ${sala.grupa} <span style="float:right;color:#999">🕐 ${sala.ore}</span></div>
+                            <div>👥 ${sala.grupa}
+                                <span style="float:right;color:#999">🕐 ${sala.ore}</span>
+                            </div>
                         </div>` : ''}
                     ${sala.status === 'pauza' ? `
                         <div class="sala-info">⏸ Pauză</div>` : ''}
@@ -506,7 +519,9 @@
                             ${isConfigured
                                 ? '<span class="badge bg-success ms-2" style="font-size:0.6em">ACTIV</span>'
                                 : '<span class="badge bg-warning text-dark ms-2" style="font-size:0.6em">NOU</span>'}
-                            ${isConfigured ? '<span class="text-muted small ms-2">→ ' + salaAlocata + '</span>' : ''}
+                            ${isConfigured
+                                ? '<span class="text-muted small ms-2">→ ' + salaAlocata + '</span>'
+                                : ''}
                         </h6>
                         <div class="text-muted small mt-1">MAC: <code>${mac}</code></div>
                     </div>
@@ -515,9 +530,8 @@
                             <select class="form-select" id="sel-${mac}">
                                 ${optionsHtml}
                             </select>
-                            <button class="btn btn-primary" onclick="window.salveazaSala('${mac}')">
-                                💾 Salvează
-                            </button>
+                            <button class="btn btn-primary"
+                                    onclick="window.salveazaSala('${mac}')">💾 Salvează</button>
                         </div>
                     </div>
                 </div>
