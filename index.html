@@ -37,21 +37,17 @@
         }
         .vacanta-panel label { font-size: 12px; color: #666; margin-bottom: 2px; }
 
-        /* SALA CARD pentru tab Live */
         .sala-card {
             background: white; border-radius: 10px;
             box-shadow: 0 2px 4px rgba(0,0,0,0.05);
             margin-bottom: 10px; border-left: 5px solid #ccc;
-            padding: 12px 16px;
-            transition: all 0.2s;
+            padding: 12px 16px; transition: all 0.2s;
         }
-        .sala-card.ocupat  { border-left-color: #dc3545; }
-        .sala-card.liber   { border-left-color: #198754; }
-        .sala-card.pauza   { border-left-color: #ffc107; }
+        .sala-card.ocupat { border-left-color: #dc3545; }
+        .sala-card.liber  { border-left-color: #198754; }
+        .sala-card.pauza  { border-left-color: #ffc107; }
         .sala-card .sala-name { font-weight: 700; font-size: 15px; }
         .sala-card .sala-info { font-size: 12px; color: #666; margin-top: 3px; }
-        .sala-card .sala-time { font-size: 11px; color: #999; float: right; }
-
         .filter-btn { margin-right: 6px; margin-bottom: 6px; }
     </style>
 </head>
@@ -90,14 +86,14 @@
         <div id="alertZone"></div>
 
         <!-- TABS -->
-        <ul class="nav nav-tabs mb-4" id="mainTabs">
+        <ul class="nav nav-tabs mb-4">
             <li class="nav-item">
-                <a class="nav-link active" id="tab-dispozitive" href="#" onclick="schimbaTab('dispozitive')">
+                <a class="nav-link active" id="tab-dispozitive" href="#" onclick="schimbaTab('dispozitive'); return false;">
                     📡 Dispozitive
                 </a>
             </li>
             <li class="nav-item">
-                <a class="nav-link" id="tab-live" href="#" onclick="schimbaTab('live')">
+                <a class="nav-link" id="tab-live" href="#" onclick="schimbaTab('live'); return false;">
                     🔴 Săli Live
                 </a>
             </li>
@@ -133,8 +129,8 @@
         <div id="content-live" class="d-none">
             <div class="d-flex justify-content-between align-items-center mb-3">
                 <div>
-                    <button class="btn btn-sm btn-danger filter-btn" onclick="filtreaza('toate')">Toate</button>
-                    <button class="btn btn-sm btn-outline-danger filter-btn" onclick="filtreaza('ocupat')">Ocupate</button>
+                    <button class="btn btn-sm btn-danger filter-btn"         onclick="filtreaza('toate')">Toate</button>
+                    <button class="btn btn-sm btn-outline-danger filter-btn"  onclick="filtreaza('ocupat')">Ocupate</button>
                     <button class="btn btn-sm btn-outline-success filter-btn" onclick="filtreaza('liber')">Libere</button>
                     <button class="btn btn-sm btn-outline-warning filter-btn" onclick="filtreaza('pauza')">Pauză</button>
                 </div>
@@ -143,11 +139,10 @@
                     <button class="btn btn-sm btn-primary" onclick="incarcaSaliLive()">🔄 Reîncarcă</button>
                 </div>
             </div>
-
             <div id="saliLiveContainer">
                 <div class="text-center mt-5">
                     <div class="spinner-border text-primary" role="status"></div>
-                    <p class="mt-2 text-muted">Se încarcă sălile...</p>
+                    <p class="mt-2 text-muted">Apasă Reîncarcă pentru a vedea sălile.</p>
                 </div>
             </div>
         </div>
@@ -158,7 +153,7 @@
 <script type="module">
     import { initializeApp }
         from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
-    import { getDatabase, ref, onValue, get, set }
+    import { getDatabase, ref, onValue, set }
         from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js";
     import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut }
         from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
@@ -173,6 +168,10 @@
     const app  = initializeApp(firebaseConfig);
     const db   = getDatabase(app);
     const auth = getAuth(app);
+
+    // Proxy CORS pentru API ULB
+    const PROXY = 'https://corsproxy.io/?';
+    const API   = 'https://schedule.ulbsibiu.ro/api/faculties/ing';
 
     let toateSalile     = [];
     let lastDevicesData = null;
@@ -216,15 +215,13 @@
         document.getElementById('content-live').classList.add('d-none');
         document.getElementById('tab-dispozitive').classList.remove('active');
         document.getElementById('tab-live').classList.remove('active');
-
         document.getElementById('content-' + tab).classList.remove('d-none');
         document.getElementById('tab-' + tab).classList.add('active');
-
-        if (tab === 'live') incarcaSaliLive();
+        if (tab === 'live' && saliLiveData.length === 0) incarcaSaliLive();
     };
 
     // ============================================================
-    // PORNIRE
+    // PORNIRE APLICATIE
     // ============================================================
     function pornireAplicatie() {
         onValue(ref(db, 'Sali'), (snap) => {
@@ -267,7 +264,6 @@
             } else {
                 ul.innerHTML = '<li class="list-group-item text-danger text-center">Nicio sală activă.</li>';
             }
-
             if (lastDevicesData) randeazaDispozitive(lastDevicesData);
         });
 
@@ -278,7 +274,7 @@
     }
 
     // ============================================================
-    // SALI LIVE DIN API ULB
+    // SALI LIVE DIN API ULB (cu CORS proxy)
     // ============================================================
     window.incarcaSaliLive = async function() {
         const container = document.getElementById('saliLiveContainer');
@@ -286,38 +282,37 @@
 
         container.innerHTML = `<div class="text-center mt-4">
             <div class="spinner-border text-primary" role="status"></div>
-            <p class="mt-2 text-muted">Se încarcă orarul...</p>
+            <p class="mt-2 text-muted">Se încarcă orarul... (poate dura 1-2 minute)</p>
         </div>`;
         status.textContent = 'Se încarcă...';
 
         try {
-            // 1. Aflam semestrul activ
-            const semResp = await fetch('https://schedule.ulbsibiu.ro/api/faculties/ing/planning-time-units?type=semester&active_only=true');
+            // 1. Semestrul activ
+            const semResp = await fetch(PROXY + API + '/planning-time-units?type=semester&active_only=true');
             const semData = await semResp.json();
             const semestru = semData.data[0];
             const semId    = semestru.id;
             const semStart = new Date(semestru.startDate);
 
-            // 2. Calculam saptamana para/impara
-            const now       = new Date();
-            const diffMs    = now - semStart;
-            const diffZile  = Math.floor(diffMs / 86400000);
+            // 2. Calcul saptamana para/impara
+            const now      = new Date();
+            const diffZile = Math.floor((now - semStart) / 86400000);
             const saptamana = Math.floor(diffZile / 7);
-            const isEven    = (saptamana % 2 === 1);
-            const ziuaEng   = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'][now.getDay()];
-            const oraMin    = now.getHours() * 60 + now.getMinutes();
+            const isEven   = (saptamana % 2 === 1);
+            const ziuaEng  = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'][now.getDay()];
+            const oraMin   = now.getHours() * 60 + now.getMinutes();
+            const oraText  = now.getHours() + ':' + String(now.getMinutes()).padStart(2,'0');
 
-            status.textContent = `Sem. ${semId} | Săpt. ${saptamana+1} (${isEven ? 'pară' : 'impară'}) | ${ziuaEng} ${now.getHours()}:${String(now.getMinutes()).padStart(2,'0')}`;
+            status.textContent = `Săpt. ${saptamana+1} (${isEven ? 'pară' : 'impară'}) | ${ziuaEng} ${oraText}`;
 
-            // 3. Descarcam lista de sali
-            const saliResp = await fetch('https://schedule.ulbsibiu.ro/api/faculties/ing/rooms?per_page=500');
+            // 3. Lista sali
+            const saliResp = await fetch(PROXY + API + '/rooms?per_page=500');
             const saliData = await saliResp.json();
             const sali     = saliData.data;
 
-            // 4. Pentru fiecare sala descarcam orarul
             saliLiveData = [];
 
-            // Procesam in paralel cu Promise.all dar in grupuri de 10
+            // Procesam in grupuri de 10 simultan
             const grupuri = [];
             for (let i = 0; i < sali.length; i += 10) {
                 grupuri.push(sali.slice(i, i + 10));
@@ -326,7 +321,7 @@
             for (const grup of grupuri) {
                 await Promise.all(grup.map(async (sala) => {
                     try {
-                        const orarResp = await fetch(`https://schedule.ulbsibiu.ro/api/faculties/ing/rooms/${sala.id}/schedule`);
+                        const orarResp = await fetch(PROXY + API + '/rooms/' + sala.id + '/schedule');
                         const orarData = await orarResp.json();
                         const schedules = orarData.data?.schedules || [];
 
@@ -335,6 +330,9 @@
                         let profSala    = '';
                         let grupaSala   = '';
                         let oreSala     = '';
+
+                        let minutFinalAnterior = -1;
+                        let minutUrmatorCurs   = 9999;
 
                         for (const sched of schedules) {
                             if (sched.day !== ziuaEng) continue;
@@ -357,16 +355,21 @@
                                 break;
                             }
 
-                            // Detectare pauza
-                            if (statusSala !== 'ocupat') {
-                                const endPrev  = endMin;
-                                const startNxt = startMin;
-                                if (oraMin >= endPrev && oraMin < startNxt && (startNxt - endPrev) <= 15) {
-                                    statusSala  = 'pauza';
-                                    materieSala = 'Pauză';
-                                    oreSala     = slots[0].startTime + '-' + slots[0].endTime;
-                                }
-                            }
+                            if (startMin > oraMin && startMin < minutUrmatorCurs)
+                                minutUrmatorCurs = startMin;
+                            if (endMin <= oraMin && endMin > minutFinalAnterior)
+                                minutFinalAnterior = endMin;
+                        }
+
+                        // Detectare pauza (max 15 min intre cursuri)
+                        if (statusSala === 'liber' &&
+                            minutFinalAnterior !== -1 &&
+                            minutUrmatorCurs   !== 9999 &&
+                            (minutUrmatorCurs - minutFinalAnterior) <= 15 &&
+                            oraMin >= minutFinalAnterior &&
+                            oraMin <  minutUrmatorCurs) {
+                            statusSala  = 'pauza';
+                            materieSala = 'Pauză';
                         }
 
                         saliLiveData.push({
@@ -383,22 +386,25 @@
                     }
                 }));
 
-                // Update progres
                 status.textContent = `Se încarcă... ${saliLiveData.length}/${sali.length}`;
             }
 
-            // Sortam: ocupate primul, dupa libere
+            // Sortam: ocupate, pauza, libere
             saliLiveData.sort((a, b) => {
                 const ord = { ocupat: 0, pauza: 1, liber: 2 };
                 if (ord[a.status] !== ord[b.status]) return ord[a.status] - ord[b.status];
                 return a.nume.localeCompare(b.nume);
             });
 
-            status.textContent = `Actualizat ${new Date().toLocaleTimeString('ro-RO')} | ${saliLiveData.filter(s=>s.status==='ocupat').length} ocupate`;
+            const nrOcupate = saliLiveData.filter(s => s.status === 'ocupat').length;
+            status.textContent = `Actualizat ${new Date().toLocaleTimeString('ro-RO')} | ${nrOcupate} ocupate din ${saliLiveData.length}`;
             randeazaSaliLive();
 
         } catch(e) {
-            container.innerHTML = `<div class="alert alert-danger">Eroare la încărcarea orarului: ${e.message}</div>`;
+            container.innerHTML = `<div class="alert alert-danger">
+                Eroare la încărcarea orarului: ${e.message}
+            </div>`;
+            status.textContent = 'Eroare!';
         }
     };
 
@@ -426,12 +432,12 @@
             return;
         }
 
-        let html = `<div class="row">`;
+        let html = '<div class="row">';
         for (const sala of filtrate) {
             let badgeClass = 'bg-success';
             let badgeText  = 'Liberă';
-            if (sala.status === 'ocupat') { badgeClass = 'bg-danger'; badgeText = 'Ocupată'; }
-            if (sala.status === 'pauza')  { badgeClass = 'bg-warning text-dark'; badgeText = 'Pauză'; }
+            if (sala.status === 'ocupat') { badgeClass = 'bg-danger';              badgeText = 'Ocupată'; }
+            if (sala.status === 'pauza')  { badgeClass = 'bg-warning text-dark';  badgeText = 'Pauză';   }
 
             html += `
             <div class="col-md-4 col-sm-6">
@@ -441,17 +447,17 @@
                         <span class="badge ${badgeClass}">${badgeText}</span>
                     </div>
                     ${sala.status === 'ocupat' ? `
-                    <div class="sala-info">
-                        <div>📚 ${sala.materie}</div>
-                        <div>👤 ${sala.prof}</div>
-                        <div>👥 ${sala.grupa} <span class="sala-time">🕐 ${sala.ore}</span></div>
-                    </div>` : sala.status === 'pauza' ? `
-                    <div class="sala-info">⏸ Pauză — urmează curs la ${sala.ore.split('-')[0]}</div>
-                    ` : ''}
+                        <div class="sala-info">
+                            <div>📚 ${sala.materie}</div>
+                            <div>👤 ${sala.prof}</div>
+                            <div>👥 ${sala.grupa} <span style="float:right;color:#999">🕐 ${sala.ore}</span></div>
+                        </div>` : ''}
+                    ${sala.status === 'pauza' ? `
+                        <div class="sala-info">⏸ Pauză</div>` : ''}
                 </div>
             </div>`;
         }
-        html += `</div>`;
+        html += '</div>';
         container.innerHTML = html;
     }
 
@@ -543,13 +549,12 @@
                             : 'Nicio vacanță setată.'}
                     </div>
                 </div>`;
-
             container.appendChild(card);
         });
     }
 
     window.salveazaSala = async function(mac) {
-        const el = document.getElementById('sel-' + mac);
+        const el   = document.getElementById('sel-' + mac);
         const sala = el ? el.value : '';
         if (!sala) { afiseazaAlert('Alege o sală!', 'warning'); return; }
         try {
