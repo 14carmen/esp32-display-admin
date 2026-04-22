@@ -36,6 +36,23 @@
             border-radius: 8px; padding: 12px 16px; margin-top: 10px;
         }
         .vacanta-panel label { font-size: 12px; color: #666; margin-bottom: 2px; }
+
+        /* SALA CARD pentru tab Live */
+        .sala-card {
+            background: white; border-radius: 10px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+            margin-bottom: 10px; border-left: 5px solid #ccc;
+            padding: 12px 16px;
+            transition: all 0.2s;
+        }
+        .sala-card.ocupat  { border-left-color: #dc3545; }
+        .sala-card.liber   { border-left-color: #198754; }
+        .sala-card.pauza   { border-left-color: #ffc107; }
+        .sala-card .sala-name { font-weight: 700; font-size: 15px; }
+        .sala-card .sala-info { font-size: 12px; color: #666; margin-top: 3px; }
+        .sala-card .sala-time { font-size: 11px; color: #999; float: right; }
+
+        .filter-btn { margin-right: 6px; margin-bottom: 6px; }
     </style>
 </head>
 <body>
@@ -71,32 +88,70 @@
 
     <div class="container">
         <div id="alertZone"></div>
-        <div class="row">
 
-            <!-- Stanga: status live sali -->
-            <div class="col-md-4">
-                <div class="card mb-3 shadow-sm">
-                    <div class="card-header bg-dark text-white d-flex justify-content-between align-items-center">
-                        <span>🏫 Săli Conectate</span>
-                        <span id="lastUpdate" class="badge bg-secondary" style="font-size:10px;">—</span>
+        <!-- TABS -->
+        <ul class="nav nav-tabs mb-4" id="mainTabs">
+            <li class="nav-item">
+                <a class="nav-link active" id="tab-dispozitive" href="#" onclick="schimbaTab('dispozitive')">
+                    📡 Dispozitive
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link" id="tab-live" href="#" onclick="schimbaTab('live')">
+                    🔴 Săli Live
+                </a>
+            </li>
+        </ul>
+
+        <!-- TAB DISPOZITIVE -->
+        <div id="content-dispozitive">
+            <div class="row">
+                <div class="col-md-4">
+                    <div class="card mb-3 shadow-sm">
+                        <div class="card-header bg-dark text-white d-flex justify-content-between align-items-center">
+                            <span>🏫 Săli (Firebase)</span>
+                            <span id="lastUpdate" class="badge bg-secondary" style="font-size:10px;">—</span>
+                        </div>
+                        <ul class="list-group list-group-flush" id="listaSaliPreview" style="max-height:600px; overflow-y:auto;">
+                            <li class="list-group-item text-muted text-center py-3">Se încarcă...</li>
+                        </ul>
                     </div>
-                    <ul class="list-group list-group-flush" id="listaSaliPreview" style="max-height:600px; overflow-y:auto;">
-                        <li class="list-group-item text-muted text-center py-3">Se încarcă...</li>
-                    </ul>
                 </div>
-            </div>
-
-            <!-- Dreapta: dispozitive -->
-            <div class="col-md-8">
-                <h5 class="mb-3 text-secondary border-bottom pb-2">📡 Dispozitive Conectate</h5>
-                <div id="listaDispozitive">
-                    <div class="text-center mt-5">
-                        <div class="spinner-border text-primary" role="status"></div>
-                        <p class="mt-2 text-muted">Caut dispozitive...</p>
+                <div class="col-md-8">
+                    <h5 class="mb-3 text-secondary border-bottom pb-2">📡 Dispozitive Conectate</h5>
+                    <div id="listaDispozitive">
+                        <div class="text-center mt-5">
+                            <div class="spinner-border text-primary" role="status"></div>
+                            <p class="mt-2 text-muted">Caut dispozitive...</p>
+                        </div>
                     </div>
                 </div>
             </div>
         </div>
+
+        <!-- TAB LIVE -->
+        <div id="content-live" class="d-none">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <div>
+                    <button class="btn btn-sm btn-danger filter-btn" onclick="filtreaza('toate')">Toate</button>
+                    <button class="btn btn-sm btn-outline-danger filter-btn" onclick="filtreaza('ocupat')">Ocupate</button>
+                    <button class="btn btn-sm btn-outline-success filter-btn" onclick="filtreaza('liber')">Libere</button>
+                    <button class="btn btn-sm btn-outline-warning filter-btn" onclick="filtreaza('pauza')">Pauză</button>
+                </div>
+                <div class="d-flex align-items-center gap-2">
+                    <span id="liveStatus" class="text-muted small">—</span>
+                    <button class="btn btn-sm btn-primary" onclick="incarcaSaliLive()">🔄 Reîncarcă</button>
+                </div>
+            </div>
+
+            <div id="saliLiveContainer">
+                <div class="text-center mt-5">
+                    <div class="spinner-border text-primary" role="status"></div>
+                    <p class="mt-2 text-muted">Se încarcă sălile...</p>
+                </div>
+            </div>
+        </div>
+
     </div>
 </div>
 
@@ -121,8 +176,12 @@
 
     let toateSalile     = [];
     let lastDevicesData = null;
+    let saliLiveData    = [];
+    let filtruCurent    = 'toate';
 
+    // ============================================================
     // AUTH
+    // ============================================================
     onAuthStateChanged(auth, (user) => {
         if (user) {
             document.getElementById('loginSection').classList.add('d-none');
@@ -149,10 +208,25 @@
 
     document.getElementById('btnLogout').addEventListener('click', () => signOut(auth));
 
-    // PORNIRE
-    function pornireAplicatie() {
+    // ============================================================
+    // TABS
+    // ============================================================
+    window.schimbaTab = function(tab) {
+        document.getElementById('content-dispozitive').classList.add('d-none');
+        document.getElementById('content-live').classList.add('d-none');
+        document.getElementById('tab-dispozitive').classList.remove('active');
+        document.getElementById('tab-live').classList.remove('active');
 
-        // Status live sali
+        document.getElementById('content-' + tab).classList.remove('d-none');
+        document.getElementById('tab-' + tab).classList.add('active');
+
+        if (tab === 'live') incarcaSaliLive();
+    };
+
+    // ============================================================
+    // PORNIRE
+    // ============================================================
+    function pornireAplicatie() {
         onValue(ref(db, 'Sali'), (snap) => {
             const data = snap.val();
             const ul   = document.getElementById('listaSaliPreview');
@@ -197,7 +271,6 @@
             if (lastDevicesData) randeazaDispozitive(lastDevicesData);
         });
 
-        // Dispozitive
         onValue(ref(db, 'Configurare'), (snap) => {
             lastDevicesData = snap.val();
             randeazaDispozitive(lastDevicesData);
@@ -205,10 +278,185 @@
     }
 
     // ============================================================
-    // FORMAT FIREBASE folosit de main.cpp:
-    //   /Configurare/<MAC>            -> "NumeSala"  (string simplu)
-    //   /Configurare/<MAC>_vac_start  -> "YYYY-MM-DD"
-    //   /Configurare/<MAC>_vac_end    -> "YYYY-MM-DD"
+    // SALI LIVE DIN API ULB
+    // ============================================================
+    window.incarcaSaliLive = async function() {
+        const container = document.getElementById('saliLiveContainer');
+        const status    = document.getElementById('liveStatus');
+
+        container.innerHTML = `<div class="text-center mt-4">
+            <div class="spinner-border text-primary" role="status"></div>
+            <p class="mt-2 text-muted">Se încarcă orarul...</p>
+        </div>`;
+        status.textContent = 'Se încarcă...';
+
+        try {
+            // 1. Aflam semestrul activ
+            const semResp = await fetch('https://schedule.ulbsibiu.ro/api/faculties/ing/planning-time-units?type=semester&active_only=true');
+            const semData = await semResp.json();
+            const semestru = semData.data[0];
+            const semId    = semestru.id;
+            const semStart = new Date(semestru.startDate);
+
+            // 2. Calculam saptamana para/impara
+            const now       = new Date();
+            const diffMs    = now - semStart;
+            const diffZile  = Math.floor(diffMs / 86400000);
+            const saptamana = Math.floor(diffZile / 7);
+            const isEven    = (saptamana % 2 === 1);
+            const ziuaEng   = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'][now.getDay()];
+            const oraMin    = now.getHours() * 60 + now.getMinutes();
+
+            status.textContent = `Sem. ${semId} | Săpt. ${saptamana+1} (${isEven ? 'pară' : 'impară'}) | ${ziuaEng} ${now.getHours()}:${String(now.getMinutes()).padStart(2,'0')}`;
+
+            // 3. Descarcam lista de sali
+            const saliResp = await fetch('https://schedule.ulbsibiu.ro/api/faculties/ing/rooms?per_page=500');
+            const saliData = await saliResp.json();
+            const sali     = saliData.data;
+
+            // 4. Pentru fiecare sala descarcam orarul
+            saliLiveData = [];
+
+            // Procesam in paralel cu Promise.all dar in grupuri de 10
+            const grupuri = [];
+            for (let i = 0; i < sali.length; i += 10) {
+                grupuri.push(sali.slice(i, i + 10));
+            }
+
+            for (const grup of grupuri) {
+                await Promise.all(grup.map(async (sala) => {
+                    try {
+                        const orarResp = await fetch(`https://schedule.ulbsibiu.ro/api/faculties/ing/rooms/${sala.id}/schedule`);
+                        const orarData = await orarResp.json();
+                        const schedules = orarData.data?.schedules || [];
+
+                        let statusSala  = 'liber';
+                        let materieSala = 'Sala Liberă';
+                        let profSala    = '';
+                        let grupaSala   = '';
+                        let oreSala     = '';
+
+                        for (const sched of schedules) {
+                            if (sched.day !== ziuaEng) continue;
+                            if (sched.studyFormation?.planningTimeUnitId !== semId) continue;
+                            if (sched.isEvenWeek && !isEven) continue;
+                            if (sched.isOddWeek  &&  isEven) continue;
+
+                            const slots = sched.timeSlots || [];
+                            if (slots.length === 0) continue;
+
+                            const startMin = timeToMins(slots[0].startTime);
+                            const endMin   = timeToMins(slots[0].endTime);
+
+                            if (oraMin >= startMin && oraMin < endMin) {
+                                statusSala  = 'ocupat';
+                                materieSala = sched.subject;
+                                profSala    = sched.professor;
+                                grupaSala   = sched.studyFormation?.name || '';
+                                oreSala     = slots[0].startTime + '-' + slots[0].endTime;
+                                break;
+                            }
+
+                            // Detectare pauza
+                            if (statusSala !== 'ocupat') {
+                                const endPrev  = endMin;
+                                const startNxt = startMin;
+                                if (oraMin >= endPrev && oraMin < startNxt && (startNxt - endPrev) <= 15) {
+                                    statusSala  = 'pauza';
+                                    materieSala = 'Pauză';
+                                    oreSala     = slots[0].startTime + '-' + slots[0].endTime;
+                                }
+                            }
+                        }
+
+                        saliLiveData.push({
+                            id:      sala.id,
+                            nume:    sala.name,
+                            status:  statusSala,
+                            materie: materieSala,
+                            prof:    profSala,
+                            grupa:   grupaSala,
+                            ore:     oreSala
+                        });
+                    } catch(e) {
+                        // Ignoram salile cu eroare
+                    }
+                }));
+
+                // Update progres
+                status.textContent = `Se încarcă... ${saliLiveData.length}/${sali.length}`;
+            }
+
+            // Sortam: ocupate primul, dupa libere
+            saliLiveData.sort((a, b) => {
+                const ord = { ocupat: 0, pauza: 1, liber: 2 };
+                if (ord[a.status] !== ord[b.status]) return ord[a.status] - ord[b.status];
+                return a.nume.localeCompare(b.nume);
+            });
+
+            status.textContent = `Actualizat ${new Date().toLocaleTimeString('ro-RO')} | ${saliLiveData.filter(s=>s.status==='ocupat').length} ocupate`;
+            randeazaSaliLive();
+
+        } catch(e) {
+            container.innerHTML = `<div class="alert alert-danger">Eroare la încărcarea orarului: ${e.message}</div>`;
+        }
+    };
+
+    function timeToMins(timeStr) {
+        if (!timeStr) return 0;
+        const parts = timeStr.split(':');
+        return parseInt(parts[0]) * 60 + parseInt(parts[1]);
+    }
+
+    window.filtreaza = function(tip) {
+        filtruCurent = tip;
+        randeazaSaliLive();
+    };
+
+    function randeazaSaliLive() {
+        const container = document.getElementById('saliLiveContainer');
+
+        let filtrate = saliLiveData;
+        if (filtruCurent !== 'toate') {
+            filtrate = saliLiveData.filter(s => s.status === filtruCurent);
+        }
+
+        if (filtrate.length === 0) {
+            container.innerHTML = '<div class="alert alert-info">Nicio sală găsită.</div>';
+            return;
+        }
+
+        let html = `<div class="row">`;
+        for (const sala of filtrate) {
+            let badgeClass = 'bg-success';
+            let badgeText  = 'Liberă';
+            if (sala.status === 'ocupat') { badgeClass = 'bg-danger'; badgeText = 'Ocupată'; }
+            if (sala.status === 'pauza')  { badgeClass = 'bg-warning text-dark'; badgeText = 'Pauză'; }
+
+            html += `
+            <div class="col-md-4 col-sm-6">
+                <div class="sala-card ${sala.status}">
+                    <div class="d-flex justify-content-between align-items-start">
+                        <span class="sala-name">${sala.nume}</span>
+                        <span class="badge ${badgeClass}">${badgeText}</span>
+                    </div>
+                    ${sala.status === 'ocupat' ? `
+                    <div class="sala-info">
+                        <div>📚 ${sala.materie}</div>
+                        <div>👤 ${sala.prof}</div>
+                        <div>👥 ${sala.grupa} <span class="sala-time">🕐 ${sala.ore}</span></div>
+                    </div>` : sala.status === 'pauza' ? `
+                    <div class="sala-info">⏸ Pauză — urmează curs la ${sala.ore.split('-')[0]}</div>
+                    ` : ''}
+                </div>
+            </div>`;
+        }
+        html += `</div>`;
+        container.innerHTML = html;
+    }
+
+    // ============================================================
+    // DISPOZITIVE
     // ============================================================
     function randeazaDispozitive(data) {
         const container = document.getElementById('listaDispozitive');
@@ -219,7 +467,6 @@
             return;
         }
 
-        // Filtram doar cheile MAC (excludem cheile _vac_start/_vac_end)
         const macuri = Object.keys(data).filter(k => !k.includes('_vac_'));
 
         if (macuri.length === 0) {
@@ -268,7 +515,6 @@
                         </div>
                     </div>
                 </div>
-
                 <div class="vacanta-panel">
                     <div class="row g-2 align-items-end">
                         <div class="col-auto">
@@ -302,12 +548,10 @@
         });
     }
 
-    // Salvare sala — string simplu direct in /Configurare/<MAC>
     window.salveazaSala = async function(mac) {
         const el = document.getElementById('sel-' + mac);
         const sala = el ? el.value : '';
         if (!sala) { afiseazaAlert('Alege o sală!', 'warning'); return; }
-
         try {
             await set(ref(db, 'Configurare/' + mac), sala);
             afiseazaAlert('✓ Sala "' + sala + '" salvată pentru ' + mac, 'success');
@@ -316,14 +560,11 @@
         }
     };
 
-    // Salvare vacanta — chei separate <MAC>_vac_start / <MAC>_vac_end
     window.salveazaVacanta = async function(mac) {
         const vs = document.getElementById('vs-' + mac)?.value || '';
         const ve = document.getElementById('ve-' + mac)?.value || '';
-
         if (!vs || !ve) { afiseazaAlert('Completează ambele date!', 'warning'); return; }
         if (vs > ve)    { afiseazaAlert('Start trebuie să fie înainte de end!', 'warning'); return; }
-
         try {
             await set(ref(db, 'Configurare/' + mac + '_vac_start'), vs);
             await set(ref(db, 'Configurare/' + mac + '_vac_end'),   ve);
@@ -333,7 +574,6 @@
         }
     };
 
-    // Stergere vacanta
     window.stergeVacanta = async function(mac) {
         try {
             await set(ref(db, 'Configurare/' + mac + '_vac_start'), null);
